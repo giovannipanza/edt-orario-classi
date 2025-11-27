@@ -1,7 +1,9 @@
 /***********************
  *  CONFIG & GLOBALS   *
  ***********************/
-const DEFAULT_ACCESS_TOKEN = '9SEFkXuQXEiLcf3VxTW4Pw%3D%3D';
+
+//token hidden....
+const DEFAULT_ACCESS_TOKEN = 'xxxxxxx';
 
 // --- DRIVE CACHE CONFIGURATION ---
 const CACHE_FOLDER_NAME = 'EDT_Cache'; // The name of the folder that will be created on Drive
