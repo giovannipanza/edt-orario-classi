@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Orario delle classi e variazioni</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+/* === TEMA INTERMEDIO (niente nero, contrasto morbido) === */
+:root{
+  --bg:#e9eeec;
+  --card:#f7f9f8;
+  --grid:#ccd7d3;
+  --ink:#0f1412;
+  --muted:#5a6a66;
+  --accent:#3A7F73;
+}
+
+body{ background:var(--bg); color:var(--ink); }
+.card{ background:var(--card); border-color:#d7e2df; box-shadow:0 8px 24px rgba(0,0,0,.05); }
+
+input[type=file],select,input[type=date],button{
+  background:#ffffff; color:var(--ink); border:1px solid #cfdad7;
+}
+button:hover{ background:var(--accent); color:#fff; border-color:var(--accent); }
+
+thead th{ background:#dde7e4; color:#17322e; border-color:#cfdad7; }
+.timecol{ background:#dde7e4; color:#365551; border-color:#cfdad7; }
+table th,table td{ border-color:#cfdad7; }
+
+thead th.today{ background:#d3e7e2; box-shadow: inset 0 -2px 0 var(--accent); }
+.slot.today{ background:#e6f3f0; }
+
+.course{
+  background:#ffffff;
+  border:1px solid #3A7F73;
+  border-radius:12px;
+  color:#0f1412;
+}
+.course small{ color:#4e6662; }
+.course .caps{ color:#2e6d62; }
+
+.course.cancelled{ background:#fdecef; border-color:#c0525d; }
+/* ====== RESPONSIVE FIX ====== */
+
+/* Il contenitore della tabella scorre in orizzontale nei display piccoli */
+.tt{
+  overflow:auto;                 /* già presente, lo ribadiamo */
+  -webkit-overflow-scrolling:touch;
+}
+
+/* Riduci rigidità della tabella sui piccoli schermi */
+table{ min-width: 720px; }       /* prima era 920px: più “mobile-friendly” */
+
+/* Controlli in riga -> a colonne su mobile */
+@media (max-width: 900px){
+  .wrap{ padding: 0 12px; }
+  h1{ font-size: 28px; line-height: 1.15; }
+  .row{
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  /* i controlli occupano tutta la larghezza e vanno a capo */
+  label, select, input[type=date], input[type=file], button{
+    width:100%;
+    box-sizing:border-box;
+  }
+  /* spazi/padding più compatti */
+  .card{ padding:14px; }
+  th, td{ padding:6px 7px; }
+  .course{ padding:6px 8px; border-radius:10px; }
+  .course small{ display:block; font-size:12px; line-height:1.3; }
+  .course strong{ font-size:14px; line-height:1.25; }
+  /* colonna ora più stretta */
+  .timecol{ width:70px; }
+}
+
+/* Telefono “stretto” */
+@media (max-width: 600px){
+  html, body{ font-size: 13px; }
+  h1{ font-size: 24px; }
+  .hint{ font-size: 12px; }
+  /* disattiva sticky che su mobile può rompere lo scorrimento */
+  thead th, .timecol{
+    position: static;
+  }
+  /* rendi le celle un filo più alte per cliccare meglio */
+  .slot{ min-height: 26px; }
+  /* intestazioni con data più compatte (es: 20/10 invece di “20/10/2025” se lo usi) */
+  thead th{ white-space: nowrap; }
+}
+
+/* Ultra-compatto (iPhone SE/vecchi Android) */
+@media (max-width: 380px){
+  html, body{ font-size: 12px; }
+  .timecol{ width: 64px; }
+  .course{ padding:5px 7px; }
+  .course strong{ font-size:13px; }
+  .course small{ font-size:11px; }
+}
+
+/* La tabella resta scrollabile e la colonna "Ora" è fissa */
+.tt{
+  overflow:auto;
+  position:relative;
+}
+
+.timecol{
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--card);
+  box-shadow: 2px 0 5px rgba(0,0,0,.12); /* leggero bordo destro */
+}
+
+thead th.timecol{
+  z-index: 6;
+}
+
+/* Bordi orizzontali uniformi */
+table{
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+}
+
+table tr{
+  border-bottom: 1px solid var(--grid);   /* bordo inferiore */
+}
+
+/* Tolgo completamente hover o sfumature */
+tbody tr:hover{
+  background: none;
+}
+
+table th, table td{
+  border: none;             /* niente bordi verticali */
+  padding: 6px 8px;
+}
+
+/* Mantengo le intestazioni con il loro bordo inferiore */
+thead th{
+  border-bottom: 2px solid var(--grid);
+}
+
+
+
+
+/* Su mobile il bordo resta visibile ma i colori restano leggeri */
+@media (max-width: 600px){
+  table tr{
+    border-top: 1px solid color-mix(in oklab, var(--grid) 60%, #0000);
+    border-bottom: 1px solid color-mix(in oklab, var(--grid) 60%, #0000);
+  }
+  table td, table th{
+    border-left: 1px solid color-mix(in oklab, var(--grid) 60%, #0000);
+    border-right: 1px solid color-mix(in oklab, var(--grid) 60%, #0000);
+  }
+}
+
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Orario settimanale</h1>
+    <p class="hint">Consulta l’orario della classe e le eventuali variazioni settimanali. Seleziona la classe desiderata.</p>
+
+    <div class="card">
+      <div class="row">
+        <label>Classe: <select id="selClasse" disabled></select></label>
+        <label>Giorno: <input id="inpDate" type="date" disabled/></label>
+        <button id="btnRender" disabled>MOSTRA ORARIO</button>
+        <span class="hint" id="weekInfo"></span>
+        <div id="status" class="hint" style="margin-left:auto; display: flex; align-items: center;"></div>
+      </div>
+      <div class="tt" id="timetableTarget"></div>
+    </div>
+
+    <details>
+      <summary>Debug Tools</summary>
+      <div style="margin-top: 16px;">
+        <p class="hint">You can manually load an XML file to test the display without calling the server.</p>
+        <div class="row">
+          <input id="xmlFileManual" type="file" accept=".xml,text/xml" />
+          <button id="btnParseManual">Import from File</button>
+          <button id="btnLog">Log EDT Object</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <!-- Include the data processing logic -->
+  <?!= HtmlService.createHtmlOutputFromFile('edt.js').getContent(); ?>
+
+  <script>
+    const $ = s => document.querySelector(s);
+    
+    /* ===================== STATE MANAGEMENT & APP STARTUP ===================== */
+    window.addEventListener('DOMContentLoaded', initializeApp);
+
+    function initializeApp(){
+      setStatus('loading', 'Caricamento dati...si prega di attendere');
+      google.script.run
+        .withSuccessHandler(onXmlReceived)
+        .withFailureHandler(onXmlError)
+        .getEdtXml();
+    }
+    
+    function onXmlReceived(xmlText){
+      try {
+        if (!xmlText || xmlText.startsWith('Error')) {
+            throw new Error(xmlText || 'The received XML is empty.');
+        }
+        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+        if (doc.querySelector('parsererror')) {
+            throw new Error('Invalid or malformed XML.');
+        }
+        processEDT(doc);
+        setStatus('ok', 'I dati sono stati caricati. Seleziona la classe e il giorno di tuo interesse.');
+      } catch (e) {
+        console.error('Error parsing or processing XML:', e);
+        setStatus('err', 'Error: ' + e.message);
+      }
+    }
+
+    function onXmlError(error){
+      console.error('Server call error (getEdtXml):', error);
+      setStatus('err', 'Server error: ' + error.message);
+    }
+    
+    function processEDT(doc) {
+      // buildEDT is from edt.js.html
+      const EDT = buildEDT(doc);
+      EDT.classe = EDT.Classe; // alias
+      EDT.salle  = EDT.Salle; // alias
+      window.EDT = EDT;
+      
+      populateClassSelect(EDT);
+      $('#inpDate').disabled = false;
+      $('#btnRender').disabled = false;
+      setDefaultDate();
+      renderFromUI(); // Immediately show the timetable
+    }
+
+    function setStatus(kind, msg){
+      const el = $('#status');
+      el.innerHTML = (kind === 'loading' ? '<div class="loader"></div>' : '') + (msg || '');
+      el.className = 'row ' + (kind === 'loading' ? 'hint' : (kind || 'hint'));
+    }
+
+    /* ===================== UI & EVENTS ===================== */
+    $('#btnParseManual').addEventListener('click', async () => {
+      const file = $('#xmlFileManual').files?.[0];
+      if (!file) return setStatus('warn', 'Select an XML file from the debug section.');
+      try {
+        setStatus('loading', 'Reading manual file...');
+        const xmlText = await file.text();
+        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+        if (doc.querySelector('parsererror')) throw new Error('Invalid XML in file');
+        processEDT(doc);
+        setStatus('ok', 'EDT from manual file is ready.');
+      } catch (e) {
+        console.error(e);
+        setStatus('err', 'Manual file error: ' + e.message);
+      }
+    });
+
+    $('#btnLog').addEventListener('click', () => window.EDT ? console.log('EDT', window.EDT) : setStatus('warn', 'No EDT object has been created yet.'));
+    $('#btnRender').addEventListener('click', renderFromUI);
+    $('#selClasse').addEventListener('change', renderFromUI);
+    $('#inpDate').addEventListener('change', renderFromUI);
+
+    function populateClassSelect(EDT){
+      const sel = $('#selClasse'); sel.innerHTML = '';
+      const classes = Object.entries(EDT.Classe || {}).sort((a,b)=> (a[1].Nom||'').localeCompare(b[1].Nom||''));
+      for (const [id, c] of classes){
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = c.Nom || id;
+        sel.appendChild(opt);
+      }
+      sel.disabled = classes.length === 0;
+    }
+
+    function setDefaultDate(){
+      $('#inpDate').value = new Date().toISOString().slice(0,10);
+    }
+
+    function todayLocalISO() {
+    // Europa/Roma per evitare slittamenti con UTC
+    const d = new Date();
+    const z = new Date(d.toLocaleString('en-CA', { timeZone: 'Europe/Rome' }));
+    const y = z.getFullYear();
+    const m = String(z.getMonth()+1).padStart(2,'0');
+    const day = String(z.getDate()).padStart(2,'0');
+    return `${y}-${m}-${day}`;
+}
+
+function renderFromUI(){
+  const EDT = window.EDT; if (!EDT) return;
+  const classId = $('#selClasse').value;
+  if (!classId) {
+    $('#timetableTarget').innerHTML = '<p class="hint">Seleziona la classe per vedere le eventuali variazioni settimanali</p>';
+    return;
+  }
+
+  const dateIso = $('#inpDate').value || todayLocalISO();
+
+  // Calcolo settimana (funzioni definite in edt.js.html)
+  const { start, end, week } = getWeekDateRange(dateIso);
+
+  // dd-mm-yyyy per la scritta sopra
+  function formatDate(isoString) {
+    const [year, month, day] = isoString.split('-');
+    return `${day}-${month}-${year}`;
+  }
+  $('#weekInfo').textContent = `Settimana n.${week} - dal ${formatDate(start)} al ${formatDate(end)}`;
+
+  // Dati dei corsi
+  const rawCourses = coursesForClassAndWeek(EDT, classId, week);
+  const mergedCourses = compressCoursesByHour(rawCourses);
+
+  // ⬇️ QUI è il punto chiave: passiamo le date a renderTimetableByHour
+  // weekStartIso = 'start' della settimana corrente
+  // todayIso     = data locale di oggi (Europa/Roma)
+  renderTimetableByHour(EDT, mergedCourses, 'timetableTarget', {
+    weekStartIso: start,
+    todayIso: todayLocalISO()
+  });
+}
+
+  </script>
+</body>
+</html>
