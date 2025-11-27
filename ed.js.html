@@ -1,0 +1,266 @@
+<script>
+  // Constant for week calculation, used by the functions below
+  const SCHOOL_FIRST_MONDAY = '2025-09-01';
+
+  /* ===================== BUILD EDT (main mapper) ===================== */
+  function buildEDT(doc){
+    const byId = (root, child, fields) => {
+      const r = doc.querySelector(root); const map = {};
+      if (!r) return map;
+      r.querySelectorAll(child).forEach(el => {
+        const id = el.getAttribute('Ident') || el.getAttribute('Id'); if (!id) return;
+        const o = {};
+        (fields?.length ? fields : Array.from(el.attributes).map(a=>a.name))
+          .forEach(k => { const v = el.getAttribute(k); if (v!=null) o[k]=v; });
+        if (o.Nom?.trim) o.Nom=o.Nom.trim();
+        if (o.Libelle?.trim) o.Libelle=o.Libelle.trim();
+        map[id]=o;
+      });
+      return map;
+    };
+    const Classe = byId('Classes','Classe');
+    const Professeurs = byId('Professeurs','Professeur',['Nom','Prenom','Civilite','Code']);
+    const Matieres = byId('Matieres','Matiere',['Libelle','Code']);
+    const Salle = byId('Salles','Salle',['Nom','Code']);
+    const Etiquettes = byId('Etiquettes','Etiquette',['Libelle','Code','Couleur']);
+    const MotifAbsences = (() => {
+      const map = {}; const root = doc.querySelector('MotifsAbsence');
+      if (root){
+        root.querySelectorAll('MotifAbsence').forEach(el=>{
+          const id = el.getAttribute('Ident')||el.getAttribute('Id'); if(!id) return;
+          const Libelle = el.getAttribute('Libelle') || el.getAttribute('Nom') || (el.textContent||'').trim();
+          const Code = el.getAttribute('Code') || undefined;
+          map[id] = Code ? {Libelle, Code} : {Libelle};
+        });
+      }
+      return map;
+    })();
+    const PlacesParJour = (() => {
+      const map = {}; const root = doc.querySelector('PlacesParJour');
+      if (root){
+        root.querySelectorAll('Place').forEach(el=>{
+          const numero = el.getAttribute('Numero');
+          const start = el.getAttribute('LibelleHeureDebut') || el.getAttribute('HeureDebut') || '';
+          const end = el.getAttribute('LibelleHeureFin') || el.getAttribute('HeureFin') || '';
+          if (numero!=null) map[String(numero)] = { LibelleHeureDebut:start, LibelleHeureFin:end, start, end };
+        });
+      }
+      return map;
+    })();
+    const Courses = [];
+    doc.querySelectorAll('Cours').forEach(c=>{
+      const base = {}; Array.from(c.attributes).forEach(a=> base[a.name]=a.value);
+      const collect = tag => Array.from(c.querySelectorAll(':scope > '+tag)).map(x=>{
+        const o={}; Array.from(x.attributes).forEach(a=>o[a.name]=a.value); return o;
+      });
+      Courses.push({ ...base, Etiquettes: collect('Etiquette'), Matieres: collect('Matiere'), Professeurs: collect('Professeur'), Classes: collect('Classe'), Salles: collect('Salle') });
+    });
+    const Absences=[];
+    const absRoot = doc.querySelector('Absences');
+    if (absRoot){
+      absRoot.querySelectorAll('Absence').forEach(a=>{
+        const o={}; Array.from(a.attributes).forEach(attr=>o[attr.name]=attr.value);
+        const p=a.querySelector(':scope>Professeur'); if(p){ const x={}; Array.from(p.attributes).forEach(at=>x[at.name]=at.value); o.Professeur=x; }
+        const m=a.querySelector(':scope>MotifAbsence'); if(m){ const x={}; Array.from(m.attributes).forEach(at=>x[at.name]=at.value); o.Motif=x; }
+        Absences.push(o);
+      });
+    }
+    const yearStart = doc.querySelector('AnneeScolaire')?.getAttribute('Debut') || '';
+    const yearEnd = doc.querySelector('AnneeScolaire')?.getAttribute('Fin') || '';
+    return { Absences, Classe, Courses, Etiquettes, Matieres, MotifAbsences, PlacesParJour, Professeurs, Salle, firstMonday: SCHOOL_FIRST_MONDAY, yearStart, yearEnd };
+  }
+
+  /* ===================== WEEK LOGIC (BigInt + calendar) ===================== */
+  function semainesContainsWeek(maskDec, weekIndex){
+    if (!maskDec || weekIndex == null) return false;
+    try {
+      const m = BigInt(String(maskDec));
+      const w = BigInt(weekIndex);
+      return ((m >> w) & 1n) === 1n;
+    } catch { return false; }
+  }
+  function getYearWeek(dateIso){
+    const base = new Date(SCHOOL_FIRST_MONDAY + 'T00:00:00Z');
+    const d = new Date(dateIso + 'T00:00:00Z');
+    const diffDays = Math.floor((d - base) / 86400000);
+    return Math.max(1, Math.min(52, Math.floor(diffDays/7) + 1));
+  }
+  function getWeekDateRange(dateIso){
+    const w = getYearWeek(dateIso);
+    const base = new Date(SCHOOL_FIRST_MONDAY + 'T00:00:00Z');
+    const start = new Date(base.getTime() + (w-1)*7*86400000);
+    const end = new Date(start.getTime() + 5*86400000);
+    return { start: toISODate(start), end: toISODate(end), week: w };
+  }
+  function toISODate(d){ return d.toISOString().slice(0,10); }
+
+  /* ===================== COURSE PROCESSING LOGIC ===================== */
+  function coursesForClassAndWeek(EDT, classId, weekIndex){
+    const out = [];
+    for (const c of EDT.Courses){
+      if (!(c.Classes||[]).some(k => String(k.Ident) === String(classId))) continue;
+      const isCancelled = !!(c.SemainesAnnulation && semainesContainsWeek(c.SemainesAnnulation, weekIndex));
+      const isPlanned = (c.Semaines ? semainesContainsWeek(c.Semaines, weekIndex) : true);
+      const classMaskOk = (c.Classes||[]).every(k => !k.Semaines || semainesContainsWeek(k.Semaines, weekIndex));
+      if (!classMaskOk || (!isPlanned && !isCancelled)) continue;
+      const mat = (c.Matieres?.[0]?.Ident && EDT.Matieres[c.Matieres[0].Ident]?.Libelle) || '';
+      const profs = (c.Professeurs||[]).map(p => { const P = EDT.Professeurs[p.Ident]||{}; return P.Prenom ? `${P.Prenom} ${P.Nom}` : (P.Nom || ''); }).filter(Boolean).join(', ');
+      const room = (c.Salles||[]).map(s => EDT.Salle[s.Ident]?.Nom || '').filter(Boolean).join(', ');
+      const variantLabel = (() => {
+        const list = (c.Etiquettes||[]).filter(e => !e.Semaines || semainesContainsWeek(e.Semaines, weekIndex)).map(e => EDT.Etiquettes?.[e.Ident]?.Libelle).filter(Boolean);
+        return list[0] || (isCancelled ? 'Variation' : '');
+      })();
+      const sIdx = Number(c.NumeroPlaceDebut || 0);
+      const len = Math.max(1, Number(c.NombrePlaces || 1));
+      const startSlot = EDT.PlacesParJour[String(sIdx)];
+      const endSlot = EDT.PlacesParJour[String(sIdx + len - 1)];
+      const start = startSlot?.LibelleHeureDebut || startSlot?.start || '';
+      const end = endSlot?.LibelleHeureFin || endSlot?.end || '';
+      out.push({ Jour: Math.max(1, Math.min(6, Number(c.Jour || 1))) - 1, sIdx, len, start, end, label: isCancelled ? (variantLabel || 'Variation') : (mat || '—'), profs, room, cancelled: isCancelled, originalLabel: mat });
+    }
+    return out;
+  }
+
+  function compressCoursesByHour(courses){
+    const byDay = Array.from({length:6}, ()=>[]);
+    courses.forEach(c => byDay[c.Jour].push(c));
+    for (let d=0; d<6; d++) byDay[d].sort((a,b)=> a.sIdx - b.sIdx);
+    const eq = (a,b) => a.label===b.label && (a.profs||'')===(b.profs||'') && (a.room||'')===(b.room||'') && a.cancelled===b.cancelled;
+    const out = [];
+    for (let d=0; d<6; d++){
+      const list = byDay[d]; let i = 0;
+      while (i < list.length){
+        let cur = { ...list[i] }; let j = i + 1;
+        while (j < list.length){
+          const nxt = list[j];
+          if (nxt.sIdx === cur.sIdx + cur.len && eq(cur, nxt)){ cur.len += nxt.len; cur.end = nxt.end; j++; } else break;
+        }
+        out.push(cur); i = j;
+      }
+    }
+    return out;
+  }
+
+  /* ===================== RENDER LOGIC ===================== */
+  function buildHourRows(EDT){
+    const slots = EDT.PlacesParJour; const keys = Object.keys(slots).map(Number).sort((a,b)=>a-b); const rows = [];
+    if (keys.length===0) return rows;
+    let currentHour = null, startIdx = keys[0];
+    for (let i=0;i<keys.length;i++){
+      const idx = keys[i];
+      const t = slots[String(idx)].LibelleHeureDebut || slots[String(idx)].start || '';
+      const hour = (t||'').slice(0,2) + ':00';
+      if (currentHour===null){ currentHour = hour; startIdx = idx; }
+      else if (hour !== currentHour){ rows.push({ hour: currentHour, start: startIdx, end: keys[i-1] }); currentHour = hour; startIdx = idx; }
+      if (i===keys.length-1) rows.push({ hour: currentHour, start: startIdx, end: idx });
+    }
+    return rows;
+  }
+
+  function hoursSpanForCourse(course, hourRows){
+    const lastSlot = course.sIdx + course.len - 1;
+    let startHourIdx = hourRows.findIndex(r => course.sIdx >= r.start && course.sIdx <= r.end);
+    if (startHourIdx < 0) startHourIdx = 0;
+    let rowspan = 1;
+    for (let h = startHourIdx; h < hourRows.length; h++){ if (lastSlot <= hourRows[h].end) break; rowspan++; }
+    return { rowspan };
+  }
+  
+  function renderTimetableByHour(EDT, courses, targetElementId, opts = {}){
+  const target = document.getElementById(targetElementId);
+  if (!target) return;
+
+  const days = ['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
+
+  // Helpers locali
+  const toISO = d => d.toISOString().slice(0,10);
+  function addDaysISO(iso, n){
+    const d = new Date(iso + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return toISO(d);
+  }
+  const formatDM = iso => {
+    const [y,m,d] = iso.split('-');
+    return `${d}/${m}`;
+  };
+
+  const weekStartIso = opts.weekStartIso || EDT.firstMonday || '2025-09-01';
+  const todayIso = opts.todayIso || null;
+
+  // Calcola l'ISO di ogni colonna (lun→sab) e trova l’indice dell’oggi
+  const dayIsos = Array.from({length:6}, (_,i)=> addDaysISO(weekStartIso, i));
+  const todayIdx = todayIso ? dayIsos.findIndex(x => x === todayIso) : -1;
+
+  const hourRows = buildHourRows(EDT);
+  if (hourRows.length===0){ target.innerHTML = '<p class="warn">No time slots found in EDT data.</p>'; return; }
+
+  // Pre-elabora corsi
+  const startersByDay = Array.from({length:6}, ()=> ({}));
+  courses.forEach(c => { (startersByDay[c.Jour][c.sIdx] ||= []).push(c); });
+  const cover = Array.from({length:6}, ()=> ({}));
+  const placedGroup = Array.from({length:6}, ()=> new Set());
+
+  // Header con giorno + dd/mm e badge "oggi"
+  let html = '<table><thead><tr><th class="timecol">Ora</th>';
+  for (let i=0; i<6; i++){
+  const isToday = (i === todayIdx);
+  const label = `${days[i]} ${formatDM(dayIsos[i])}`;
+  html += `<th class="${isToday ? 'today' : ''}">
+    ${label}${isToday ? ' <span class="badge-today">(OGGI)</span>' : ''}
+  </th>`;
+}
+
+  html += '</tr></thead><tbody>';
+
+  // Corpo tabella
+  for (let h=0; h<hourRows.length; h++){
+    const row = hourRows[h];
+    html += `<tr><th class="timecol"><span class="hourmark">${row.hour}</span></th>`;
+
+    for (let day=0; day<6; day++){
+      if (cover[day][h]) continue;
+
+      const isTodayCol = (day === todayIdx);
+
+      const startSlots = Object.keys(startersByDay[day]).map(Number)
+        .filter(sIdx => sIdx >= row.start && sIdx <= row.end && !placedGroup[day].has(sIdx))
+        .sort((a,b)=>a-b);
+
+      if (startSlots.length){
+        let cellInner = ''; let maxRowspan = 1;
+
+        for (const sIdx of startSlots){
+          const group = startersByDay[day][sIdx];
+          const spans = group.map(c => hoursSpanForCourse(c, hourRows));
+          const maxSpan = Math.max(...spans.map(s=>s.rowspan));
+          if (maxSpan > maxRowspan) maxRowspan = maxSpan;
+          for (let k=1; k<maxSpan; k++) cover[day][h+k] = true;
+
+          for (const c of group){
+            const cls = ['course']; if (c.cancelled) cls.push('cancelled');
+            cellInner += `<div class="${cls.join(' ')}">
+              <div><strong>${escapeHTML(c.label)}</strong></div>
+              ${c.cancelled && c.originalLabel ? `<small class="muted">Era ${escapeHTML(c.originalLabel)}</small>` : ''}
+              <small>${escapeHTML(c.profs || '')}</small>
+              <small class="caps">${escapeHTML(c.room || '')}</small>
+              <small>${escapeHTML(c.start)}–${escapeHTML(c.end)}</small>
+            </div>`;
+          }
+          placedGroup[day].add(sIdx);
+        }
+
+        html += `<td class="slot ${isTodayCol ? 'today' : ''}" rowspan="${maxRowspan}">${cellInner}</td>`;
+      } else {
+        html += `<td class="slot ${isTodayCol ? 'today' : ''}"></td>`;
+      }
+    }
+    html += `</tr>`;
+  }
+
+  html += '</tbody></table>';
+  target.innerHTML = html;
+}
+
+  
+  function escapeHTML(s){ return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>
