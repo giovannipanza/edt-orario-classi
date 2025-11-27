@@ -389,6 +389,12 @@ thead th{
 
     function populateClassSelect(EDT){
       const sel = $('#selClasse'); sel.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = 'Seleziona un docente';
+      placeholder.selected = true;
+      placeholder.disabled = true;
+      sel.appendChild(placeholder);
       const classes = Object.entries(EDT.Classe || {}).sort((a,b)=> (a[1].Nom||'').localeCompare(b[1].Nom||''));
       for (const [id, c] of classes){
         const opt = document.createElement('option');
