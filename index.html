@@ -13,15 +13,112 @@
   --ink:#0f1412;
   --muted:#5a6a66;
   --accent:#3A7F73;
+  --accent-strong:#2f685f;
+  --shadow:0 18px 48px rgba(31, 68, 62, .10);
 }
 
-body{ background:var(--bg); color:var(--ink); }
-.card{ background:var(--card); border-color:#d7e2df; box-shadow:0 8px 24px rgba(0,0,0,.05); }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+*{ box-sizing:border-box; }
+body{
+  margin:0;
+  background:radial-gradient(circle at 20% 20%, #f4f7f6, #e5ebea), var(--bg);
+  color:var(--ink);
+  font-family:'Inter', system-ui, -apple-system, sans-serif;
+  line-height:1.5;
+}
+
+.wrap{
+  max-width:1100px;
+  margin:0 auto;
+  padding:32px 20px 40px;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+h1{
+  margin:0;
+  font-size:32px;
+  letter-spacing:-0.02em;
+}
+
+.hint{ color:var(--muted); margin:4px 0 0; }
+
+.card{
+  background:var(--card);
+  border:1px solid #d7e2df;
+  border-radius:14px;
+  box-shadow:var(--shadow);
+  padding:18px;
+}
+
+.row{
+  display:flex;
+  align-items:flex-end;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
+label{
+  color:var(--muted);
+  font-weight:600;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  font-size:14px;
+}
 
 input[type=file],select,input[type=date],button{
-  background:#ffffff; color:var(--ink); border:1px solid #cfdad7;
+  background:#ffffff;
+  color:var(--ink);
+  border:1px solid #cfdad7;
+  border-radius:10px;
+  padding:10px 12px;
+  font-size:14px;
+  transition:all .15s ease;
+  font-family:inherit;
 }
-button:hover{ background:var(--accent); color:#fff; border-color:var(--accent); }
+select, input[type=date]{ min-width:170px; }
+input[type=file]{ padding:9px 10px; }
+input:focus, select:focus{ outline:2px solid color-mix(in srgb, var(--accent) 35%, #fff); border-color:var(--accent); }
+
+button{
+  cursor:pointer;
+  background:linear-gradient(120deg, var(--accent), var(--accent-strong));
+  color:#fff;
+  font-weight:700;
+  letter-spacing:0.02em;
+  box-shadow:0 12px 24px rgba(58,127,115,.25);
+}
+button:disabled{
+  opacity:0.6;
+  cursor:default;
+  background:#cfdad7;
+  color:#4d5a58;
+  box-shadow:none;
+}
+button:not(:disabled):hover{ transform:translateY(-1px); box-shadow:0 14px 32px rgba(58,127,115,.28); }
+button:active{ transform:translateY(0); }
+
+.status-row{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  color:var(--muted);
+}
+.status-row.ok{ color:var(--accent-strong); font-weight:600; }
+.status-row.err{ color:#b04353; font-weight:700; }
+.status-row.warn{ color:#b67a12; font-weight:600; }
+.loader{
+  width:18px; height:18px;
+  border-radius:50%;
+  border:3px solid #cfdad7;
+  border-top-color:var(--accent);
+  animation:spin .9s linear infinite;
+}
+@keyframes spin{ to{ transform:rotate(360deg); } }
 
 thead th{ background:#dde7e4; color:#17322e; border-color:#cfdad7; }
 .timecol{ background:#dde7e4; color:#365551; border-color:#cfdad7; }
@@ -35,11 +132,13 @@ thead th.today{ background:#d3e7e2; box-shadow: inset 0 -2px 0 var(--accent); }
   border:1px solid #3A7F73;
   border-radius:12px;
   color:#0f1412;
+  box-shadow:0 10px 22px rgba(58,127,115,.08);
+  padding:8px 10px;
 }
 .course small{ color:#4e6662; }
-.course .caps{ color:#2e6d62; }
+.course .caps{ color:#2e6d62; font-weight:600; letter-spacing:0.02em; }
 
-.course.cancelled{ background:#fdecef; border-color:#c0525d; }
+.course.cancelled{ background:#fdecef; border-color:#c0525d; box-shadow:0 10px 22px rgba(192,82,93,.12); }
 /* ====== RESPONSIVE FIX ====== */
 
 /* Il contenitore della tabella scorre in orizzontale nei display piccoli */
@@ -102,6 +201,10 @@ table{ min-width: 720px; }       /* prima era 920px: più “mobile-friendly” 
 .tt{
   overflow:auto;
   position:relative;
+  border-radius:14px;
+  background:#ffffff;
+  box-shadow:var(--shadow);
+  padding:10px;
 }
 
 .timecol{
@@ -121,6 +224,8 @@ table{
   border-collapse: collapse;
   border-spacing: 0;
   width: 100%;
+  background:#fff;
+  border-radius:10px;
 }
 
 table tr{
@@ -141,6 +246,18 @@ table th, table td{
 thead th{
   border-bottom: 2px solid var(--grid);
 }
+
+.badge-today{
+  background:color-mix(in srgb, var(--accent) 90%, #fff);
+  color:#fff;
+  padding:4px 8px;
+  border-radius:8px;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:0.02em;
+}
+
+.hourmark{ font-weight:700; color:#244640; }
 
 
 
@@ -171,7 +288,7 @@ thead th{
         <label>Giorno: <input id="inpDate" type="date" disabled/></label>
         <button id="btnRender" disabled>MOSTRA ORARIO</button>
         <span class="hint" id="weekInfo"></span>
-        <div id="status" class="hint" style="margin-left:auto; display: flex; align-items: center;"></div>
+        <div id="status" class="status-row" role="status" aria-live="polite"></div>
       </div>
       <div class="tt" id="timetableTarget"></div>
     </div>
@@ -244,8 +361,8 @@ thead th{
 
     function setStatus(kind, msg){
       const el = $('#status');
-      el.innerHTML = (kind === 'loading' ? '<div class="loader"></div>' : '') + (msg || '');
-      el.className = 'row ' + (kind === 'loading' ? 'hint' : (kind || 'hint'));
+      el.innerHTML = (kind === 'loading' ? '<div class="loader" aria-hidden="true"></div>' : '') + (msg || '');
+      el.className = 'status-row ' + (kind || 'hint');
     }
 
     /* ===================== UI & EVENTS ===================== */
